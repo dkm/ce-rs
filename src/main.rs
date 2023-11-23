@@ -439,8 +439,6 @@ async fn do_compile(base_url: &str, matches : &ArgMatches) {
         "no".to_string() // FIXME
     };
 
-    let compiler_id = matches.get_one::<String>("compiler-id").expect("Missing compiler-id");
-
     let flags = if let Some(f) = matches.get_one::<String>("flags") {
         f.clone()
     } else {
@@ -448,7 +446,16 @@ async fn do_compile(base_url: &str, matches : &ArgMatches) {
     };
 
     let simple_job = CompileJob::build(&source_data, &flags, &filters_config);
-    let compile_ret1 = compile(base_url, compiler_id, simple_job).await;
+
+    let compiler_id = if let Some(id) = matches.get_one::<String>("compiler-id") {
+        id.clone()
+    } else {
+        let compiler_name = matches.get_one::<String>("compiler-name").unwrap();
+        // find_compiler_by_name(compiler_name)
+        "cg132".to_string()
+    };
+
+    let compile_ret1 = compile(base_url, &compiler_id, simple_job).await;
 
     let ret1 = compile_ret1.unwrap();
 
@@ -498,6 +505,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(Arg::new("compiler-id")
                     .long("compiler-id")
                     .short('c'))
+                .arg(Arg::new("compiler-name")
+                    .long("compiler-name"))
+                .group(ArgGroup::new("compiler-selector")
+                    .args(["compiler-name", "compiler-id"])
+                    .required(true)
+                    .multiple(true))
                 .arg(Arg::new("flags")
                     .allow_hyphen_values(true)
                     .long("flags"))
