@@ -16,10 +16,11 @@
  */
 
 use serde::Serialize;
-use clap::{Arg, Command, ArgMatches};
+use clap::{Arg, ArgGroup, Command, ArgMatches};
 
 use serde::Deserialize;
-use std::collections::HashMap;
+use serde_json::to_string;
+use std::{collections::HashMap};
 use thiserror::Error;
 
 #[allow(non_snake_case)]
@@ -248,7 +249,6 @@ struct SomeOutput(Vec<OutputItem>);
 impl SomeOutput {
     pub fn toText(&self) -> String {
         self.0.iter().map(|x| {
-            println!("Text: {}", x.text);
             x.text.clone()
         }).collect::<Vec<String>>().join("\n")
     }
@@ -284,7 +284,6 @@ struct AsmOutputItem {
 impl AsmOutput {
     pub fn toText(&self) -> String {
         self.0.iter().map(|x| {
-            println!("Text: {}", x.text);
             x.text.clone()
         }).collect::<Vec<String>>().join("\n")
     }
@@ -382,11 +381,11 @@ async fn shortlinkinfo(shortlink: &str) -> Result<ShortLinkInfo, Error> {
     Ok(resp)
 }
 
-async fn compile(compiler_id: &str, job: CompileJob) -> Result<CompileJobResult, Error> {
+async fn compile(base_url: &str, compiler_id: &str, job: CompileJob) -> Result<CompileJobResult, Error> {
     let client = reqwest::Client::new();
 
     let resp = client
-        .post(format!("https://godbolt.org/api/compiler/{}/compile", compiler_id))
+        .post(format!("{}/api/compiler/{}/compile", base_url, compiler_id))
         .header("Accept", "application/json")
         .json(&job)
         .send()
@@ -396,8 +395,19 @@ async fn compile(compiler_id: &str, job: CompileJob) -> Result<CompileJobResult,
     Ok(resp)
 }
 
-async fn do_compile(matches : &ArgMatches) {
+async fn do_compile(base_url: &str, matches : &ArgMatches) {
     let mut filters_config = Filters::default();
+
+    let stdout_config = match matches.get_one::<String>("stdout") {
+        Some(ref s) if *s == "-" => OutputConfig::ToStdout,
+        Some(filename) => OutputConfig::ToFile(filename.clone()),
+        _ => OutputConfig::Disable,
+    };
+    let stderr_config = match matches.get_one::<String>("stderr") {
+        Some(ref s) if *s == "-" => OutputConfig::ToStdout,
+        Some(filename) => OutputConfig::ToFile(filename.clone()),
+        _ => OutputConfig::Disable,
+    };
 
     if let Some(filters) = matches.get_many::<String> ("filters") {
     //let enabled_filters: Vec<_> = matches.get_many::<String> ("filters").unwrap().collect();
@@ -421,16 +431,47 @@ async fn do_compile(matches : &ArgMatches) {
         }
     }
 
-    let compiler_id = matches.get_one::<String>("compiler-id").expect("Missing compiler-id");
-    let source_code = matches.get_one::<String>("source").expect("Missing source code");
+    let source_data = if let Some(source_text) = matches.get_one::<String>("source") {
+        source_text.clone()
+    } else if let Some(source_file) = matches.get_one::<String>("source-file") {
+        std::fs::read_to_string(source_file).expect("Unable to read file")
+    } else {
+        "no".to_string() // FIXME
+    };
 
-    let simple_job = CompileJob::build(source_code, "", &filters_config);
-    let compile_ret1 = compile(compiler_id, simple_job).await;
+    let compiler_id = matches.get_one::<String>("compiler-id").expect("Missing compiler-id");
+
+    let flags = if let Some(f) = matches.get_one::<String>("flags") {
+        f.clone()
+    } else {
+        "".to_string()
+    };
+
+    let simple_job = CompileJob::build(&source_data, &flags, &filters_config);
+    let compile_ret1 = compile(base_url, compiler_id, simple_job).await;
 
     let ret1 = compile_ret1.unwrap();
-    println!("stdout: {}", ret1.stdout.toText());
-    println!("stderr: {}", ret1.stderr.toText());
-    println!("asm: {}", ret1.asm.toText());
+
+    match stdout_config {
+        OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stdout.toText()).unwrap(),
+        OutputConfig::ToStdout => println!("{}", ret1.stdout.toText()),
+        OutputConfig::Disable => (),
+    };
+
+    match stderr_config {
+        OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stderr.toText()).unwrap(),
+        OutputConfig::ToStdout => println!("{}", ret1.stderr.toText()),
+        OutputConfig::Disable => (),
+    };
+
+    println!("{}", ret1.asm.toText());
+}
+
+#[derive(Debug)]
+enum OutputConfig {
+    Disable,
+    ToFile(String),
+    ToStdout,
 }
 
 #[tokio::main]
@@ -441,24 +482,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .about("Play with compiler-explorer")
         .arg(Arg::new("base-url")
             .long("base-url")
-            .default_value("https://godbolt.org/api/"))
+            .default_value("https://godbolt.org"))
         .subcommand(
             Command::new("compile")
                 .arg(Arg::new("source")
+                    .conflicts_with("source-file")
                     .long("source"))
+                .arg(Arg::new("source-file")
+                    .long("source-file")
+                    .conflicts_with("source"))
+                .group(ArgGroup::new("source-group")
+                       .args(["source", "source-file"])
+                       .required(true)
+                       .multiple(true))
                 .arg(Arg::new("compiler-id")
                     .long("compiler-id")
                     .short('c'))
                 .arg(Arg::new("flags")
+                    .allow_hyphen_values(true)
                     .long("flags"))
+                .arg(Arg::new("stdout")
+                    .long("stdout")
+                    .help("Write stdout to given file (stdout if -)"))
+                .arg(Arg::new("stderr")
+                     .long("stderr")
+                     .help("Write stderr to given file (stdout if -)"))
                 .arg(Arg::new("filters")
                      .long("filters")
                      .short('f')
                      .value_delimiter(',')))
         .get_matches();
 
+    // let stderr_config = match matches.get_one::<String>("stderr") {
+    //     Some("-".to_string(value)) => OutputConfig::Disable,
+    //     Some(filename) => OutputConfig::Disable,
+    //     _ => OutputConfig::Disable,
+    // };
+
+    let base_url = matches.get_one::<String>("base-url").expect("can't be missing");
     match matches.subcommand() {
-        Some(("compile", sub_matches)) => do_compile(sub_matches).await,
+        Some(("compile", sub_matches)) => do_compile(&base_url, sub_matches).await,
         _ => println!("Woops"),
     }
 
