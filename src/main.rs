@@ -15,12 +15,14 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+use clap::{Arg, ArgGroup, ArgMatches, Command};
 use serde::Serialize;
-use clap::{Arg, ArgGroup, Command, ArgMatches};
+
+use regex::Regex;
 
 use serde::Deserialize;
 use serde_json::to_string;
-use std::{collections::HashMap};
+use std::collections::HashMap;
 use thiserror::Error;
 
 #[allow(non_snake_case)]
@@ -43,6 +45,15 @@ struct CompilerInfo {
     instructionSet: String,
 }
 
+impl CompilerInfo {
+    pub fn to_text(&self) -> String {
+        format!(
+            "\"{}\", id: {}, language: {}, type: {}, version: {}, ISA: {}",
+            self.name, self.id, self.lang, self.compilerType, self.semver, self.instructionSet
+        )
+    }
+}
+
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Session {
@@ -63,13 +74,11 @@ struct ShortLinkInfo {
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-struct Tree {
-}
+struct Tree {}
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-struct ExecutorConfig {
-}
+struct ExecutorConfig {}
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
@@ -222,15 +231,15 @@ struct OtherCompilerOptions {
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-struct Download { }
+struct Download {}
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-struct ToolResult { }
+struct ToolResult {}
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-struct Label { }
+struct Label {}
 
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
@@ -248,9 +257,11 @@ struct SomeOutput(Vec<OutputItem>);
 
 impl SomeOutput {
     pub fn toText(&self) -> String {
-        self.0.iter().map(|x| {
-            x.text.clone()
-        }).collect::<Vec<String>>().join("\n")
+        self.0
+            .iter()
+            .map(|x| x.text.clone())
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 }
 
@@ -280,12 +291,13 @@ struct AsmOutputItem {
     labels: Vec<Label>,
 }
 
-
 impl AsmOutput {
     pub fn toText(&self) -> String {
-        self.0.iter().map(|x| {
-            x.text.clone()
-        }).collect::<Vec<String>>().join("\n")
+        self.0
+            .iter()
+            .map(|x| x.text.clone())
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 }
 
@@ -345,10 +357,10 @@ async fn languages() -> Result<Vec<Language>, Error> {
     Ok(resp)
 }
 
-async fn compilers() -> Result<Vec<CompilerInfo>, Error> {
+async fn compilers(base_url: &str) -> Result<Vec<CompilerInfo>, Error> {
     let client = reqwest::Client::new();
     let resp = client
-        .get("https://godbolt.org/api/compilers")
+        .get(format!("{}/api/compilers", base_url))
         .header("Accept", "application/json")
         .send()
         .await?;
@@ -372,7 +384,10 @@ async fn compilers_id(id: u8) -> Result<Vec<CompilerInfo>, Error> {
 async fn shortlinkinfo(shortlink: &str) -> Result<ShortLinkInfo, Error> {
     let client = reqwest::Client::new();
     let resp = client
-        .get(format!("https://godbolt.org/api/shortlinkinfo/{}", shortlink))
+        .get(format!(
+            "https://godbolt.org/api/shortlinkinfo/{}",
+            shortlink
+        ))
         .header("Accept", "application/json")
         .send()
         .await?;
@@ -381,7 +396,11 @@ async fn shortlinkinfo(shortlink: &str) -> Result<ShortLinkInfo, Error> {
     Ok(resp)
 }
 
-async fn compile(base_url: &str, compiler_id: &str, job: CompileJob) -> Result<CompileJobResult, Error> {
+async fn compile(
+    base_url: &str,
+    compiler_id: &str,
+    job: CompileJob,
+) -> Result<CompileJobResult, Error> {
     let client = reqwest::Client::new();
 
     let resp = client
@@ -395,7 +414,49 @@ async fn compile(base_url: &str, compiler_id: &str, job: CompileJob) -> Result<C
     Ok(resp)
 }
 
-async fn do_compile(base_url: &str, matches : &ArgMatches) {
+async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
+    // as if all
+    if let Ok(all_compilers) = compilers(base_url).await {
+        let after_name_filtered = match matches.get_one::<String>("name") {
+            Some(name) => {
+                let re = Regex::new(format!(r"(?i){}", name).as_str()).unwrap();
+                all_compilers
+                    .into_iter()
+                    .filter(|x| re.captures(&x.name).is_some())
+                    .collect::<Vec<CompilerInfo>>()
+            }
+            _ => all_compilers,
+        };
+
+        let after_lang_filtered = match matches.get_one::<String>("language") {
+            Some(lang) => {
+                let re = Regex::new(format!(r"(?i){}", lang).as_str()).unwrap();
+                after_name_filtered
+                    .into_iter()
+                    .filter(|x| re.captures(&x.lang).is_some())
+                    .collect::<Vec<CompilerInfo>>()
+            }
+            _ => after_name_filtered,
+        };
+
+        let after_isa_filtered = match matches.get_one::<String>("isa") {
+            Some(isa) => {
+                let re = Regex::new(format!(r"(?i){}", isa).as_str()).unwrap();
+                after_lang_filtered
+                    .into_iter()
+                    .filter(|x| re.captures(&x.instructionSet).is_some())
+                    .collect::<Vec<CompilerInfo>>()
+            }
+            _ => after_lang_filtered,
+        };
+
+        for c in after_isa_filtered {
+            println!("- {}", c.to_text());
+        }
+    }
+}
+
+async fn do_compile(base_url: &str, matches: &ArgMatches) {
     let mut filters_config = Filters::default();
 
     let stdout_config = match matches.get_one::<String>("stdout") {
@@ -409,8 +470,8 @@ async fn do_compile(base_url: &str, matches : &ArgMatches) {
         _ => OutputConfig::Disable,
     };
 
-    if let Some(filters) = matches.get_many::<String> ("filters") {
-    //let enabled_filters: Vec<_> = matches.get_many::<String> ("filters").unwrap().collect();
+    if let Some(filters) = matches.get_many::<String>("filters") {
+        //let enabled_filters: Vec<_> = matches.get_many::<String> ("filters").unwrap().collect();
         filters_config = Filters::all_disabled();
         let enabled_filters: Vec<_> = filters.collect();
         for f in enabled_filters {
@@ -487,43 +548,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .version("0.1")
         .author("Marc Poulhiès <dkm@kataplop.net>")
         .about("Play with compiler-explorer")
-        .arg(Arg::new("base-url")
-            .long("base-url")
-            .default_value("https://godbolt.org"))
+        .arg(
+            Arg::new("base-url")
+                .long("base-url")
+                .default_value("https://godbolt.org"),
+        )
+        .subcommand(
+            Command::new("list-compilers")
+                .arg(Arg::new("all").action(clap::ArgAction::SetTrue).long("all"))
+                .arg(Arg::new("name").long("name"))
+                .arg(Arg::new("isa").long("instruction-set"))
+                .arg(Arg::new("language").long("language")),
+        )
         .subcommand(
             Command::new("compile")
-                .arg(Arg::new("source")
-                    .conflicts_with("source-file")
-                    .long("source"))
-                .arg(Arg::new("source-file")
-                    .long("source-file")
-                    .conflicts_with("source"))
-                .group(ArgGroup::new("source-group")
-                       .args(["source", "source-file"])
-                       .required(true)
-                       .multiple(true))
-                .arg(Arg::new("compiler-id")
-                    .long("compiler-id")
-                    .short('c'))
-                .arg(Arg::new("compiler-name")
-                    .long("compiler-name"))
-                .group(ArgGroup::new("compiler-selector")
-                    .args(["compiler-name", "compiler-id"])
-                    .required(true)
-                    .multiple(true))
-                .arg(Arg::new("flags")
-                    .allow_hyphen_values(true)
-                    .long("flags"))
-                .arg(Arg::new("stdout")
-                    .long("stdout")
-                    .help("Write stdout to given file (stdout if -)"))
-                .arg(Arg::new("stderr")
-                     .long("stderr")
-                     .help("Write stderr to given file (stdout if -)"))
-                .arg(Arg::new("filters")
-                     .long("filters")
-                     .short('f')
-                     .value_delimiter(',')))
+                .arg(
+                    Arg::new("source")
+                        .conflicts_with("source-file")
+                        .long("source"),
+                )
+                .arg(
+                    Arg::new("source-file")
+                        .long("source-file")
+                        .conflicts_with("source"),
+                )
+                .group(
+                    ArgGroup::new("source-group")
+                        .args(["source", "source-file"])
+                        .required(true)
+                        .multiple(true),
+                )
+                .arg(Arg::new("compiler-id").long("compiler-id").short('c'))
+                .arg(Arg::new("compiler-name").long("compiler-name"))
+                .group(
+                    ArgGroup::new("compiler-selector")
+                        .args(["compiler-name", "compiler-id"])
+                        .required(true)
+                        .multiple(true),
+                )
+                .arg(Arg::new("flags").allow_hyphen_values(true).long("flags"))
+                .arg(
+                    Arg::new("stdout")
+                        .long("stdout")
+                        .help("Write stdout to given file (stdout if -)"),
+                )
+                .arg(
+                    Arg::new("stderr")
+                        .long("stderr")
+                        .help("Write stderr to given file (stdout if -)"),
+                )
+                .arg(
+                    Arg::new("filters")
+                        .long("filters")
+                        .short('f')
+                        .value_delimiter(','),
+                ),
+        )
         .get_matches();
 
     // let stderr_config = match matches.get_one::<String>("stderr") {
@@ -532,31 +612,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     _ => OutputConfig::Disable,
     // };
 
-    let base_url = matches.get_one::<String>("base-url").expect("can't be missing");
+    let base_url = matches
+        .get_one::<String>("base-url")
+        .expect("can't be missing");
     match matches.subcommand() {
         Some(("compile", sub_matches)) => do_compile(&base_url, sub_matches).await,
+        Some(("list-compilers", sub_matches)) => do_list_compilers(&base_url, sub_matches).await,
         _ => println!("Woops"),
     }
 
-//     let lang = languages().await;
-//     // println!("Languages: {:?}", lang);
+    //     let lang = languages().await;
+    //     // println!("Languages: {:?}", lang);
 
-//     let comps = compilers().await;
-//     // println!("Compilers: {:?}", comps);
+    //     let comps = compilers().await;
+    //     // println!("Compilers: {:?}", comps);
 
-//     let linkinfo = shortlinkinfo(&"hMh7fcbs1").await;
-//     ///println!("linkinfo: {:?}", linkinfo);
+    //     let linkinfo = shortlinkinfo(&"hMh7fcbs1").await;
+    //     ///println!("linkinfo: {:?}", linkinfo);
 
-//     let linkinfo = shortlinkinfo(&"s6vGq7359").await;
-//     // println!("linkinfo: {:?}", linkinfo); //
+    //     let linkinfo = shortlinkinfo(&"s6vGq7359").await;
+    //     // println!("linkinfo: {:?}", linkinfo); //
 
-//     let simple_job = CompileJob::build_simple("int main() {return 0;}", "");
-//     let compile_ret1 = compile("cg412", simple_job).await;
-// //    println!("compile job result: {:?}", compile_ret1);
-//     let ret1 = compile_ret1.unwrap();
-//     println!("stdout: {}", ret1.stdout.toText());
-//     println!("stderr: {}", ret1.stderr.toText());
-//     println!("asm: {}", ret1.asm.toText());
+    //     let simple_job = CompileJob::build_simple("int main() {return 0;}", "");
+    //     let compile_ret1 = compile("cg412", simple_job).await;
+    // //    println!("compile job result: {:?}", compile_ret1);
+    //     let ret1 = compile_ret1.unwrap();
+    //     println!("stdout: {}", ret1.stdout.toText());
+    //     println!("stderr: {}", ret1.stderr.toText());
+    //     println!("asm: {}", ret1.asm.toText());
 
     Ok(())
 }
