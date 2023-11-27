@@ -17,6 +17,7 @@
 
 use clap::{Arg, ArgGroup, ArgMatches, Command};
 use serde::Serialize;
+use std::io::stdout;
 
 use regex::Regex;
 
@@ -97,11 +98,11 @@ struct CompilerConfig {
 struct Output {}
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct Library {}
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct Tool {}
 
 #[allow(non_snake_case)]
@@ -154,7 +155,7 @@ impl Filters {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct CompileJob {
     source: String,
     options: CompileOptions,
@@ -213,7 +214,7 @@ impl CompileJob {
 }
 
 #[allow(non_snake_case)]
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct CompileOptions {
     userArguments: String,
     compilerOptions: OtherCompilerOptions,
@@ -223,7 +224,7 @@ struct CompileOptions {
 }
 
 #[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct OtherCompilerOptions {
     skipAsm: bool,
     executorRequest: bool,
@@ -414,12 +415,16 @@ async fn compile(
     Ok(resp)
 }
 
-async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
-    // as if all
+async fn find_compilers(
+    base_url: &str,
+    name: Option<String>,
+    language: Option<String>,
+    isa: Option<String>,
+) -> Option<Vec<CompilerInfo>> {
     if let Ok(all_compilers) = compilers(base_url).await {
-        let after_name_filtered = match matches.get_one::<String>("name") {
-            Some(name) => {
-                let re = Regex::new(format!(r"(?i){}", name).as_str()).unwrap();
+        let after_name_filtered = match name {
+            Some(n) => {
+                let re = Regex::new(format!(r"(?i){}", n).as_str()).unwrap();
                 all_compilers
                     .into_iter()
                     .filter(|x| re.captures(&x.name).is_some())
@@ -428,9 +433,10 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
             _ => all_compilers,
         };
 
-        let after_lang_filtered = match matches.get_one::<String>("language") {
+        let after_lang_filtered = match language {
             Some(lang) => {
-                let re = Regex::new(format!(r"(?i){}", lang).as_str()).unwrap();
+                // We use an exact match for lang
+                let re = Regex::new(format!(r"(?i)^{}$", lang).as_str()).unwrap();
                 after_name_filtered
                     .into_iter()
                     .filter(|x| re.captures(&x.lang).is_some())
@@ -439,9 +445,10 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
             _ => after_name_filtered,
         };
 
-        let after_isa_filtered = match matches.get_one::<String>("isa") {
-            Some(isa) => {
-                let re = Regex::new(format!(r"(?i){}", isa).as_str()).unwrap();
+        let after_isa_filtered = match isa {
+            Some(misa) => {
+                // We use an exact match for ISA
+                let re = Regex::new(format!(r"(?i)^{}$", misa).as_str()).unwrap();
                 after_lang_filtered
                     .into_iter()
                     .filter(|x| re.captures(&x.instructionSet).is_some())
@@ -450,9 +457,24 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
             _ => after_lang_filtered,
         };
 
-        for c in after_isa_filtered {
+        return Some(after_isa_filtered);
+    }
+    None
+}
+
+async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
+    let name = matches.get_one::<String>("name");
+    let lang = matches.get_one::<String>("language");
+    let isa = matches.get_one::<String>("isa");
+
+    let maybe_compilers =
+        find_compilers(base_url, name.cloned(), lang.cloned(), isa.cloned()).await;
+    if let Some(compilers) = maybe_compilers {
+        for c in compilers {
             println!("- {}", c.to_text());
         }
+    } else {
+        println!("No compiler found");
     }
 }
 
@@ -508,34 +530,71 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
 
     let simple_job = CompileJob::build(&source_data, &flags, &filters_config);
 
-    let compiler_id = if let Some(id) = matches.get_one::<String>("compiler-id") {
-        id.clone()
+    let compilers_id = if let Some(id) = matches.get_one::<String>("compiler-id") {
+        vec![id.clone()]
     } else {
-        let compiler_name = matches.get_one::<String>("compiler-name").unwrap();
-        // find_compiler_by_name(compiler_name)
-        "cg132".to_string()
+        let name = matches.get_one::<String>("compiler-name");
+        let lang = matches.get_one::<String>("compiler-lang");
+        let isa = matches.get_one::<String>("compiler-isa");
+
+        find_compilers(base_url, name.cloned(), lang.cloned(), isa.cloned())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|cinfo| cinfo.id)
+            .collect::<Vec<String>>()
     };
 
-    let compile_ret1 = compile(base_url, &compiler_id, simple_job).await;
+    // let stdout = match stdout_config.clone() {
+    //     OutputConfig::ToFile(filename) => Some(std::fs::OpenOptions::new()
+    //         .append(true)
+    //         .open(filename)
+    //         .unwrap()),
+    //     OutputConfig::ToStdout => Some(std::io::stdout),
+    //     OutputConfig::Disable => None,
+    // };
 
-    let ret1 = compile_ret1.unwrap();
+    //    let stdout = match stdout_config.clone() {
+    //        OutputConfig::ToFile(filename) => OpenOptions::new()
+    //            .append(true)
+    //            .open(filename)
+    //            .unwrap();
 
-    match stdout_config {
-        OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stdout.toText()).unwrap(),
-        OutputConfig::ToStdout => println!("{}", ret1.stdout.toText()),
-        OutputConfig::Disable => (),
-    };
+    // std::fs::write(filename, ret1.stdout.toText()).unwrap(),
+    //        OutputConfig::ToStdout => println!("{}", ret1.stdout.toText()),
+    //        OutputConfig::Disable => (),
+    //    };
 
-    match stderr_config {
-        OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stderr.toText()).unwrap(),
-        OutputConfig::ToStdout => println!("{}", ret1.stderr.toText()),
-        OutputConfig::Disable => (),
-    };
+    //    match stderr_config.clone() {
+    //        OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stderr.toText()).unwrap(),
+    //        OutputConfig::ToStdout => println!("{}", ret1.stderr.toText()),
+    //        OutputConfig::Disable => (),
+    //    };
 
-    println!("{}", ret1.asm.toText());
+    for compiler_id in compilers_id {
+        let compile_ret1 = compile(base_url, &compiler_id, simple_job.clone()).await;
+
+        let ret1 = compile_ret1.unwrap();
+        println!("{}", ret1.stdout.toText());
+        println!("{}", ret1.stderr.toText());
+
+        // match stdout_config.clone() {
+        //     OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stdout.toText()).unwrap(),
+        //     OutputConfig::ToStdout => println!("{}", ret1.stdout.toText()),
+        //     OutputConfig::Disable => (),
+        // };
+
+        // match stderr_config.clone() {
+        //     OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stderr.toText()).unwrap(),
+        //     OutputConfig::ToStdout => println!("{}", ret1.stderr.toText()),
+        //     OutputConfig::Disable => (),
+        // };
+
+        println!("{}", ret1.asm.toText());
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum OutputConfig {
     Disable,
     ToFile(String),
@@ -576,15 +635,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ArgGroup::new("source-group")
                         .args(["source", "source-file"])
                         .required(true)
-                        .multiple(true),
+                        .multiple(false),
                 )
-                .arg(Arg::new("compiler-id").long("compiler-id").short('c'))
-                .arg(Arg::new("compiler-name").long("compiler-name"))
-                .group(
-                    ArgGroup::new("compiler-selector")
-                        .args(["compiler-name", "compiler-id"])
-                        .required(true)
-                        .multiple(true),
+                .arg(Arg::new("compiler-id").long("id"))
+                .arg(
+                    Arg::new("compiler-name")
+                        .long("name")
+                        .conflicts_with("compiler-id"),
+                )
+                .arg(
+                    Arg::new("compiler-lang")
+                        .long("language")
+                        .conflicts_with("compiler-id"),
+                )
+                .arg(
+                    Arg::new("compiler-isa")
+                        .long("instruction-set")
+                        .conflicts_with("compiler-id"),
                 )
                 .arg(Arg::new("flags").allow_hyphen_values(true).long("flags"))
                 .arg(
