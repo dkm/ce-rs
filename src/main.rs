@@ -137,20 +137,77 @@ impl Filters {
             debugCalls: false,
         }
     }
-    pub fn default() -> Self {
+
+    pub fn new() -> Self {
         Filters {
             binary: false,
             binaryObject: false,
+            execute: false,
+
             commentOnly: true,
             demangle: true,
             directives: true,
-            execute: false,
             intel: true,
             labels: true,
             libraryCode: true,
             trim: false,
             debugCalls: true,
         }
+    }
+
+    pub fn binary(mut self, v: bool) -> Self {
+        self.binary = v;
+        self
+    }
+
+    pub fn binary_object(mut self, v: bool) -> Self {
+        self.binaryObject = v;
+        self
+    }
+
+    pub fn comment_only(mut self, v: bool) -> Self {
+        self.commentOnly = v;
+        self
+    }
+
+    pub fn demangle(mut self, v: bool) -> Self {
+        self.demangle = v;
+        self
+    }
+
+    pub fn directives(mut self, v: bool) -> Self {
+        self.directives = v;
+        self
+    }
+
+    pub fn execute(mut self, v: bool) -> Self {
+        self.execute = v;
+        self
+    }
+
+    pub fn intel(mut self, v: bool) -> Self {
+        self.intel = v;
+        self
+    }
+
+    pub fn labels(mut self, v: bool) -> Self {
+        self.labels = v;
+        self
+    }
+
+    pub fn libraryCode(mut self, v: bool) -> Self {
+        self.libraryCode = v;
+        self
+    }
+
+    pub fn trim(mut self, v: bool) -> Self {
+        self.trim = v;
+        self
+    }
+
+    pub fn debugCalls(mut self, v: bool) -> Self {
+        self.debugCalls = v;
+        self
     }
 }
 
@@ -328,7 +385,40 @@ struct CompileJobResult {
     labelDefinitions: HashMap<String, i32>,
     parsingTime: String, // why not integer?
     filteredCount: i32,
-    popularArguments: HashMap<String, PopularArgument>,
+    popularArguments: Option<HashMap<String, PopularArgument>>,
+    execResult: Option<ExecutionResult>,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct ExecutionResult {
+    code: i32,
+    okToCache: Option<bool>,
+    timedOut: bool,
+    stdout: SomeOutput,
+    stderr: SomeOutput,
+    truncated: Option<bool>,
+    execTime: Option<String>,
+    processExecutionResultTime: Option<f32>,
+    didExecute: bool,
+    buildResult: ExecBuildResult,
+}
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+struct ExecBuildResult {
+    inputFilename: String,
+    code: i32,
+    okToCache: bool,
+    timedOut: bool,
+    stdout: SomeOutput,
+    stderr: SomeOutput,
+    truncated: bool,
+    execTime: String,
+    processExecutionResultTime: f32,
+    downloads: Vec<Download>,
+    executableFilename: String,
+    compilationOptions: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -478,18 +568,32 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
     }
 }
 
-async fn do_compile(base_url: &str, matches: &ArgMatches) {
-    let mut filters_config = Filters::default();
+fn handle_exec_result(r: &ExecutionResult) {
+    println!("Exit code: {}", r.code);
+    println!("stdout:\n{}", r.stdout.toText());
+    println!("Full object: {:?}", r);
+}
 
-    let stdout_config = match matches.get_one::<String>("stdout") {
-        Some(ref s) if *s == "-" => OutputConfig::ToStdout,
-        Some(filename) => OutputConfig::ToFile(filename.clone()),
-        _ => OutputConfig::Disable,
+async fn do_compile(base_url: &str, matches: &ArgMatches) {
+    let mut filters_config = Filters::new()
+        .binary(*matches.get_one("binary").unwrap())
+        .binary_object(*matches.get_one("binary-object").unwrap())
+        .execute(*matches.get_one("execute").unwrap());
+
+    let mut stdout_f = match matches.get_one::<String>("stdout") {
+        Some(ref s) if *s == "-" => Some(Box::new(std::io::stdout()) as Box<dyn std::io::Write>),
+        Some(filename) => std::fs::File::create(filename)
+            .map(|f| Some(Box::new(f) as Box<dyn std::io::Write>))
+            .unwrap(),
+        _ => None,
     };
-    let stderr_config = match matches.get_one::<String>("stderr") {
-        Some(ref s) if *s == "-" => OutputConfig::ToStdout,
-        Some(filename) => OutputConfig::ToFile(filename.clone()),
-        _ => OutputConfig::Disable,
+
+    let mut stderr_f = match matches.get_one::<String>("stderr") {
+        Some(ref s) if *s == "-" => Some(Box::new(std::io::stderr()) as Box<dyn std::io::Write>),
+        Some(filename) => std::fs::File::create(filename)
+            .map(|f| Some(Box::new(f) as Box<dyn std::io::Write>))
+            .unwrap(),
+        _ => None,
     };
 
     if let Some(filters) = matches.get_many::<String>("filters") {
@@ -545,52 +649,23 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
             .collect::<Vec<String>>()
     };
 
-    // let stdout = match stdout_config.clone() {
-    //     OutputConfig::ToFile(filename) => Some(std::fs::OpenOptions::new()
-    //         .append(true)
-    //         .open(filename)
-    //         .unwrap()),
-    //     OutputConfig::ToStdout => Some(std::io::stdout),
-    //     OutputConfig::Disable => None,
-    // };
-
-    //    let stdout = match stdout_config.clone() {
-    //        OutputConfig::ToFile(filename) => OpenOptions::new()
-    //            .append(true)
-    //            .open(filename)
-    //            .unwrap();
-
-    // std::fs::write(filename, ret1.stdout.toText()).unwrap(),
-    //        OutputConfig::ToStdout => println!("{}", ret1.stdout.toText()),
-    //        OutputConfig::Disable => (),
-    //    };
-
-    //    match stderr_config.clone() {
-    //        OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stderr.toText()).unwrap(),
-    //        OutputConfig::ToStdout => println!("{}", ret1.stderr.toText()),
-    //        OutputConfig::Disable => (),
-    //    };
-
     for compiler_id in compilers_id {
         let compile_ret1 = compile(base_url, &compiler_id, simple_job.clone()).await;
 
         let ret1 = compile_ret1.unwrap();
-        println!("{}", ret1.stdout.toText());
-        println!("{}", ret1.stderr.toText());
 
-        // match stdout_config.clone() {
-        //     OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stdout.toText()).unwrap(),
-        //     OutputConfig::ToStdout => println!("{}", ret1.stdout.toText()),
-        //     OutputConfig::Disable => (),
-        // };
+        if let Some(ref mut f) = &mut stdout_f {
+            f.write_all(ret1.stdout.toText().as_bytes()).unwrap();
+        }
 
-        // match stderr_config.clone() {
-        //     OutputConfig::ToFile(filename) => std::fs::write(filename, ret1.stderr.toText()).unwrap(),
-        //     OutputConfig::ToStdout => println!("{}", ret1.stderr.toText()),
-        //     OutputConfig::Disable => (),
-        // };
+        if let Some(ref mut f) = &mut stderr_f {
+            f.write_all(ret1.stderr.toText().as_bytes()).unwrap();
+        }
 
         println!("{}", ret1.asm.toText());
+        if let Some(exec_result) = ret1.execResult {
+            handle_exec_result(&exec_result);
+        }
     }
 }
 
@@ -625,6 +700,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Arg::new("source")
                         .conflicts_with("source-file")
                         .long("source"),
+                )
+                .arg(
+                    Arg::new("binary")
+                        .action(clap::ArgAction::SetTrue)
+                        .long("binary")
+                        .conflicts_with("binary-object")
+                        .conflicts_with("execute"),
+                )
+                .arg(
+                    Arg::new("binary-object")
+                        .action(clap::ArgAction::SetTrue)
+                        .long("binary-object")
+                        .conflicts_with("execute")
+                        .conflicts_with("binary"),
+                )
+                .arg(
+                    Arg::new("execute")
+                        .action(clap::ArgAction::SetTrue)
+                        .long("execute")
+                        .conflicts_with("binary-object")
+                        .conflicts_with("binary"),
                 )
                 .arg(
                     Arg::new("source-file")
