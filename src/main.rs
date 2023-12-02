@@ -17,15 +17,16 @@
 
 use clap::{Arg, ArgGroup, ArgMatches, Command};
 use serde::Serialize;
-use std::io::stdout;
+
+use colored::*;
 
 use regex::Regex;
 
 use serde::Deserialize;
-use serde_json::to_string;
 use std::collections::HashMap;
 use thiserror::Error;
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Language {
@@ -35,6 +36,7 @@ struct Language {
     monaco: String,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct CompilerInfo {
@@ -55,6 +57,7 @@ impl CompilerInfo {
     }
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Session {
@@ -66,6 +69,7 @@ struct Session {
     executors: Vec<ExecutorConfig>,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct ShortLinkInfo {
@@ -73,14 +77,17 @@ struct ShortLinkInfo {
     trees: Vec<Tree>,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Tree {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct ExecutorConfig {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct CompilerConfig {
@@ -93,18 +100,22 @@ struct CompilerConfig {
     tools: Vec<Tool>,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Output {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Library {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Tool {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct Filters {
@@ -121,6 +132,7 @@ struct Filters {
     debugCalls: bool,
 }
 
+#[allow(non_snake_case)]
 impl Filters {
     pub fn all_disabled() -> Self {
         Filters {
@@ -211,6 +223,7 @@ impl Filters {
     }
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Serialize, Debug, Clone)]
 struct CompileJob {
@@ -270,6 +283,7 @@ impl CompileJob {
     }
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Serialize, Debug, Clone)]
 struct CompileOptions {
@@ -280,6 +294,7 @@ struct CompileOptions {
     libraries: Vec<Library>,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 struct OtherCompilerOptions {
@@ -287,18 +302,22 @@ struct OtherCompilerOptions {
     executorRequest: bool,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Download {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct ToolResult {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Label {}
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct Tag {
@@ -309,12 +328,13 @@ struct Tag {
     file: String,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct SomeOutput(Vec<OutputItem>);
 
 impl SomeOutput {
-    pub fn toText(&self) -> String {
+    pub fn to_text(&self) -> String {
         self.0
             .iter()
             .map(|x| x.text.clone())
@@ -323,6 +343,7 @@ impl SomeOutput {
     }
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct OutputItem {
@@ -330,6 +351,7 @@ struct OutputItem {
     tag: Option<Tag>,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct SourceLocation {
@@ -337,10 +359,12 @@ struct SourceLocation {
     line: i32,
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct AsmOutput(Vec<AsmOutputItem>);
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct AsmOutputItem {
@@ -350,7 +374,7 @@ struct AsmOutputItem {
 }
 
 impl AsmOutput {
-    pub fn toText(&self) -> String {
+    pub fn to_text(&self) -> String {
         self.0
             .iter()
             .map(|x| x.text.clone())
@@ -359,6 +383,7 @@ impl AsmOutput {
     }
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 struct PopularArgument {
@@ -366,6 +391,7 @@ struct PopularArgument {
     timesused: i32,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct CompileJobResult {
@@ -389,6 +415,7 @@ struct CompileJobResult {
     execResult: Option<ExecutionResult>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct ExecutionResult {
@@ -404,6 +431,7 @@ struct ExecutionResult {
     buildResult: ExecBuildResult,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
 struct ExecBuildResult {
@@ -568,13 +596,9 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
     }
 }
 
-fn handle_exec_result(r: &ExecutionResult) {
-    println!("Exit code: {}", r.code);
-    println!("stdout:\n{}", r.stdout.toText());
-    println!("Full object: {:?}", r);
-}
-
 async fn do_compile(base_url: &str, matches: &ArgMatches) {
+    let is_summary = matches.get_one::<bool>("summary").unwrap();
+
     let mut filters_config = Filters::new()
         .binary(*matches.get_one("binary").unwrap())
         .binary_object(*matches.get_one("binary-object").unwrap())
@@ -655,16 +679,43 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
         let ret1 = compile_ret1.unwrap();
 
         if let Some(ref mut f) = &mut stdout_f {
-            f.write_all(ret1.stdout.toText().as_bytes()).unwrap();
+            f.write_all(ret1.stdout.to_text().as_bytes()).unwrap();
         }
 
         if let Some(ref mut f) = &mut stderr_f {
-            f.write_all(ret1.stderr.toText().as_bytes()).unwrap();
+            f.write_all(ret1.stderr.to_text().as_bytes()).unwrap();
         }
 
-        println!("{}", ret1.asm.toText());
+        if !is_summary {
+            println!("{}", ret1.asm.to_text());
+        } else {
+            println!(
+                "{} Compilation {}({})",
+                compiler_id,
+                (if ret1.code == 0 {
+                    "✔".green()
+                } else {
+                    "✗".red()
+                }),
+                ret1.code
+            );
+        }
+
         if let Some(exec_result) = ret1.execResult {
-            handle_exec_result(&exec_result);
+            if !is_summary {
+                println!("Execution:\n{}", exec_result.stdout.to_text());
+            } else {
+                println!(
+                    "{} Execution {}({})",
+                    compiler_id,
+                    (if exec_result.code == 0 {
+                        "✔".green()
+                    } else {
+                        "✗".red()
+                    }),
+                    exec_result.code
+                );
+            }
         }
     }
 }
@@ -721,6 +772,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .long("execute")
                         .conflicts_with("binary-object")
                         .conflicts_with("binary"),
+                )
+                .arg(
+                    Arg::new("summary")
+                        .long("summary")
+                        .action(clap::ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("source-file")
@@ -800,9 +856,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     let compile_ret1 = compile("cg412", simple_job).await;
     // //    println!("compile job result: {:?}", compile_ret1);
     //     let ret1 = compile_ret1.unwrap();
-    //     println!("stdout: {}", ret1.stdout.toText());
-    //     println!("stderr: {}", ret1.stderr.toText());
-    //     println!("asm: {}", ret1.asm.toText());
+    //     println!("stdout: {}", ret1.stdout.to_text());
+    //     println!("stderr: {}", ret1.stderr.to_text());
+    //     println!("asm: {}", ret1.asm.to_text());
 
     Ok(())
 }
