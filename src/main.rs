@@ -16,438 +16,12 @@
  */
 
 use clap::{Arg, ArgGroup, ArgMatches, Command};
-use serde::Serialize;
-
 use colored::*;
-
 use regex::Regex;
-
-use serde::Deserialize;
-use std::collections::HashMap;
 use thiserror::Error;
+mod types;
+use types::*;
 
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Language {
-    id: String,
-    name: String,
-    extensions: Vec<String>,
-    monaco: String,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct CompilerInfo {
-    id: String,
-    name: String,
-    lang: String,
-    compilerType: String,
-    semver: String,
-    instructionSet: String,
-}
-
-impl CompilerInfo {
-    pub fn to_text(&self) -> String {
-        format!(
-            "\"{}\", id: {}, language: {}, type: {}, version: {}, ISA: {}",
-            self.name, self.id, self.lang, self.compilerType, self.semver, self.instructionSet
-        )
-    }
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Session {
-    id: u8,
-    language: String,
-    source: String,
-    conformanceview: bool,
-    compilers: Vec<CompilerConfig>,
-    executors: Vec<ExecutorConfig>,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct ShortLinkInfo {
-    sessions: Vec<Session>,
-    trees: Vec<Tree>,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Tree {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct ExecutorConfig {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct CompilerConfig {
-    _internalid: u8,
-    id: String,
-    options: String,
-    filters: Filters,
-    libs: Vec<Library>,
-    specialoutputs: Vec<Output>,
-    tools: Vec<Tool>,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Output {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct Library {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct Tool {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct Filters {
-    binary: bool,
-    binaryObject: bool,
-    commentOnly: bool,
-    demangle: bool,
-    directives: bool,
-    execute: bool,
-    intel: bool,
-    labels: bool,
-    libraryCode: bool,
-    trim: bool,
-    debugCalls: bool,
-}
-
-#[allow(non_snake_case)]
-impl Filters {
-    pub fn all_disabled() -> Self {
-        Filters {
-            binary: false,
-            binaryObject: false,
-            commentOnly: false,
-            demangle: false,
-            directives: false,
-            execute: false,
-            intel: false,
-            labels: false,
-            libraryCode: false,
-            trim: false,
-            debugCalls: false,
-        }
-    }
-
-    pub fn new() -> Self {
-        Filters {
-            binary: false,
-            binaryObject: false,
-            execute: false,
-
-            commentOnly: true,
-            demangle: true,
-            directives: true,
-            intel: true,
-            labels: true,
-            libraryCode: true,
-            trim: false,
-            debugCalls: true,
-        }
-    }
-
-    pub fn binary(mut self, v: bool) -> Self {
-        self.binary = v;
-        self
-    }
-
-    pub fn binary_object(mut self, v: bool) -> Self {
-        self.binaryObject = v;
-        self
-    }
-
-    pub fn comment_only(mut self, v: bool) -> Self {
-        self.commentOnly = v;
-        self
-    }
-
-    pub fn demangle(mut self, v: bool) -> Self {
-        self.demangle = v;
-        self
-    }
-
-    pub fn directives(mut self, v: bool) -> Self {
-        self.directives = v;
-        self
-    }
-
-    pub fn execute(mut self, v: bool) -> Self {
-        self.execute = v;
-        self
-    }
-
-    pub fn intel(mut self, v: bool) -> Self {
-        self.intel = v;
-        self
-    }
-
-    pub fn labels(mut self, v: bool) -> Self {
-        self.labels = v;
-        self
-    }
-
-    pub fn libraryCode(mut self, v: bool) -> Self {
-        self.libraryCode = v;
-        self
-    }
-
-    pub fn trim(mut self, v: bool) -> Self {
-        self.trim = v;
-        self
-    }
-
-    pub fn debugCalls(mut self, v: bool) -> Self {
-        self.debugCalls = v;
-        self
-    }
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Serialize, Debug, Clone)]
-struct CompileJob {
-    source: String,
-    options: CompileOptions,
-    lang: Option<String>,
-    allowStoreCodeDebug: bool,
-}
-
-impl CompileJob {
-    pub fn build(source: &str, compiler_option: &str, filters: &Filters) -> Self {
-        CompileJob {
-            source: source.to_string(),
-            options: CompileOptions {
-                userArguments: compiler_option.to_string(),
-                compilerOptions: OtherCompilerOptions {
-                    skipAsm: false,
-                    executorRequest: false,
-                },
-                filters: (*filters).clone(),
-                tools: Vec::new(),
-                libraries: Vec::new(),
-            },
-            lang: None,
-            allowStoreCodeDebug: true,
-        }
-    }
-
-    pub fn build_simple(source: &str, compiler_option: &str) -> Self {
-        CompileJob {
-            source: source.to_string(),
-            options: CompileOptions {
-                userArguments: compiler_option.to_string(),
-                compilerOptions: OtherCompilerOptions {
-                    skipAsm: false,
-                    executorRequest: false,
-                },
-                filters: Filters {
-                    binary: false,
-                    binaryObject: false,
-                    commentOnly: false,
-                    demangle: false,
-                    directives: false,
-                    execute: false,
-                    intel: false,
-                    labels: false,
-                    libraryCode: false,
-                    trim: false,
-                    debugCalls: false,
-                },
-                tools: Vec::new(),
-                libraries: Vec::new(),
-            },
-            lang: None,
-            allowStoreCodeDebug: true,
-        }
-    }
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Serialize, Debug, Clone)]
-struct CompileOptions {
-    userArguments: String,
-    compilerOptions: OtherCompilerOptions,
-    filters: Filters,
-    tools: Vec<Tool>,
-    libraries: Vec<Library>,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct OtherCompilerOptions {
-    skipAsm: bool,
-    executorRequest: bool,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Download {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct ToolResult {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Label {}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct Tag {
-    line: i32,
-    column: i32,
-    text: String,
-    severity: i32,
-    file: String,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct SomeOutput(Vec<OutputItem>);
-
-impl SomeOutput {
-    pub fn to_text(&self) -> String {
-        self.0
-            .iter()
-            .map(|x| x.text.clone())
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct OutputItem {
-    text: String,
-    tag: Option<Tag>,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct SourceLocation {
-    file: Option<String>,
-    line: i32,
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct AsmOutput(Vec<AsmOutputItem>);
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct AsmOutputItem {
-    text: String,
-    source: Option<SourceLocation>,
-    labels: Vec<Label>,
-}
-
-impl AsmOutput {
-    pub fn to_text(&self) -> String {
-        self.0
-            .iter()
-            .map(|x| x.text.clone())
-            .collect::<Vec<String>>()
-            .join("\n")
-    }
-}
-
-#[allow(dead_code)]
-#[allow(non_snake_case)]
-#[derive(Deserialize, Debug)]
-struct PopularArgument {
-    description: String,
-    timesused: i32,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
-struct CompileJobResult {
-    inputFilename: String,
-    code: i32,
-    okToCache: bool,
-    timedOut: bool,
-    stdout: SomeOutput,
-    stderr: SomeOutput,
-    truncated: bool,
-    execTime: String, // why not integer?
-    processExecutionResultTime: f32,
-    compilationOptions: Vec<String>,
-    downloads: Vec<Download>,
-    tools: Vec<ToolResult>,
-    asm: AsmOutput,
-    labelDefinitions: HashMap<String, i32>,
-    parsingTime: String, // why not integer?
-    filteredCount: i32,
-    popularArguments: Option<HashMap<String, PopularArgument>>,
-    execResult: Option<ExecutionResult>,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
-struct ExecutionResult {
-    code: i32,
-    okToCache: Option<bool>,
-    timedOut: bool,
-    stdout: SomeOutput,
-    stderr: SomeOutput,
-    truncated: Option<bool>,
-    execTime: Option<String>,
-    processExecutionResultTime: Option<f32>,
-    didExecute: bool,
-    buildResult: ExecBuildResult,
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Debug)]
-#[allow(non_snake_case)]
-struct ExecBuildResult {
-    inputFilename: String,
-    code: i32,
-    okToCache: bool,
-    timedOut: bool,
-    stdout: SomeOutput,
-    stderr: SomeOutput,
-    truncated: bool,
-    execTime: String,
-    processExecutionResultTime: f32,
-    downloads: Vec<Download>,
-    executableFilename: String,
-    compilationOptions: Vec<String>,
-}
 
 #[derive(Debug, Error)]
 enum Error {
@@ -476,10 +50,22 @@ async fn languages() -> Result<Vec<Language>, Error> {
     Ok(resp)
 }
 
-async fn compilers(base_url: &str) -> Result<Vec<CompilerInfo>, Error> {
+async fn compilers(base_url: &str, all_fields: bool) -> Result<Vec<CompilerInfo>, Error> {
     let client = reqwest::Client::new();
+
+    let params = [
+        ("fields", (if all_fields {"all"} else {"no"})),
+    ];
+
+    let url = if all_fields {
+        reqwest::Url::parse_with_params(&format!("{}/api/compilers", base_url), &params).unwrap()
+    } else {
+        reqwest::Url::parse(&format!("{}/api/compilers", base_url)).unwrap()
+    };
+
+    println!("url: {:?}", url);
     let resp = client
-        .get(format!("{}/api/compilers", base_url))
+        .get(url)
         .header("Accept", "application/json")
         .send()
         .await?;
@@ -533,13 +119,26 @@ async fn compile(
     Ok(resp)
 }
 
+async fn get_compiler_info(base_url: &str,
+                           compiler_id: &str) -> Option<CompilerInfo> {
+    if let Ok(all_compilers) = compilers(base_url, true).await {
+        let all = all_compilers
+            .into_iter()
+            .filter(|x| x.id == compiler_id)
+            .collect::<Vec<CompilerInfo>>();
+        return Some(all[0].clone());
+    }
+    None
+}
+
 async fn find_compilers(
     base_url: &str,
+    all_fields: bool,
     name: Option<String>,
     language: Option<String>,
     isa: Option<String>,
 ) -> Option<Vec<CompilerInfo>> {
-    if let Ok(all_compilers) = compilers(base_url).await {
+    if let Ok(all_compilers) = compilers(base_url, all_fields).await {
         let after_name_filtered = match name {
             Some(n) => {
                 let re = Regex::new(format!(r"(?i){}", n).as_str()).unwrap();
@@ -586,7 +185,7 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
     let isa = matches.get_one::<String>("isa");
 
     let maybe_compilers =
-        find_compilers(base_url, name.cloned(), lang.cloned(), isa.cloned()).await;
+        find_compilers(base_url, false, name.cloned(), lang.cloned(), isa.cloned()).await;
     if let Some(compilers) = maybe_compilers {
         for c in compilers {
             println!("- {}", c.to_text());
@@ -659,21 +258,22 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
     let simple_job = CompileJob::build(&source_data, &flags, &filters_config);
 
     let compilers_id = if let Some(id) = matches.get_one::<String>("compiler-id") {
-        vec![id.clone()]
+        vec![get_compiler_info(base_url, &id).await.unwrap()]
     } else {
         let name = matches.get_one::<String>("compiler-name");
         let lang = matches.get_one::<String>("compiler-lang");
         let isa = matches.get_one::<String>("compiler-isa");
 
-        find_compilers(base_url, name.cloned(), lang.cloned(), isa.cloned())
+        find_compilers(base_url, true, name.cloned(), lang.cloned(), isa.cloned())
             .await
             .unwrap()
             .into_iter()
-            .map(|cinfo| cinfo.id)
-            .collect::<Vec<String>>()
+            .collect::<Vec<CompilerInfo>>()
     };
 
-    for compiler_id in compilers_id {
+    for compiler_info in compilers_id {
+        println!("{:?}", compiler_info);
+        let compiler_id = compiler_info.id;
         let compile_ret1 = compile(base_url, &compiler_id, simple_job.clone()).await;
 
         let ret1 = compile_ret1.unwrap();
@@ -690,14 +290,14 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
             println!("{}", ret1.asm.to_text());
         } else {
             println!(
-                "{} Compilation {}({})",
-                compiler_id,
+                "{} Compilation \"{}\" ({})",
                 (if ret1.code == 0 {
                     "✔".green()
                 } else {
                     "✗".red()
                 }),
-                ret1.code
+                compiler_info.name,
+                ret1.code,
             );
         }
 
@@ -706,13 +306,13 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
                 println!("Execution:\n{}", exec_result.stdout.to_text());
             } else {
                 println!(
-                    "{} Execution {}({})",
-                    compiler_id,
+                    "{} Execution \"{}\" ({})",
                     (if exec_result.code == 0 {
                         "✔".green()
                     } else {
                         "✗".red()
                     }),
+                    compiler_info.name,
                     exec_result.code
                 );
             }
