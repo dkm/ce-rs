@@ -63,7 +63,6 @@ async fn compilers(base_url: &str, all_fields: bool) -> Result<Vec<CompilerInfo>
         reqwest::Url::parse(&format!("{}/api/compilers", base_url)).unwrap()
     };
 
-    println!("url: {:?}", url);
     let resp = client
         .get(url)
         .header("Accept", "application/json")
@@ -255,8 +254,6 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
         "".to_string()
     };
 
-    let simple_job = CompileJob::build(&source_data, &flags, &filters_config);
-
     let compilers_id = if let Some(id) = matches.get_one::<String>("compiler-id") {
         vec![get_compiler_info(base_url, &id).await.unwrap()]
     } else {
@@ -272,8 +269,14 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
     };
 
     for compiler_info in compilers_id {
-        println!("{:?}", compiler_info);
+        // println!("{:?}", compiler_info);
         let compiler_id = compiler_info.id;
+        let mut local_filters = filters_config.clone();
+        if ! compiler_info.supportsExecute.unwrap() {
+            local_filters = local_filters.execute(false)
+        }
+        let simple_job = CompileJob::build(&source_data, &flags, &local_filters);
+
         let compile_ret1 = compile(base_url, &compiler_id, simple_job.clone()).await;
 
         let ret1 = compile_ret1.unwrap();
@@ -300,7 +303,15 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
                 ret1.code,
             );
         }
-
+        if filters_config.execute != local_filters.execute {
+            if !is_summary {
+                println!("Execution not supported\n");
+            } else {
+                println!("{} Execution not supported for \"{}\".", "✗".red(),
+                    compiler_info.name,
+                );
+            }
+        }
         if let Some(exec_result) = ret1.execResult {
             if !is_summary {
                 println!("Execution:\n{}", exec_result.stdout.to_text());
