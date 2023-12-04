@@ -38,10 +38,10 @@ enum Error {
     },
 }
 
-async fn languages() -> Result<Vec<Language>, Error> {
+async fn languages(base_url: &str) -> Result<Vec<Language>, Error> {
     let client = reqwest::Client::new();
     let resp = client
-        .get("https://godbolt.org/api/languages")
+        .get(format!("{}/api/languages", base_url))
         .header("Accept", "application/json")
         .send()
         .await?;
@@ -176,6 +176,16 @@ async fn find_compilers(
         return Some(after_isa_filtered);
     }
     None
+}
+
+async fn do_list_languages(base_url: &str, _matches: &ArgMatches) {
+    if let Ok(mut all_languages) = languages(base_url).await {
+        all_languages.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        for lang in all_languages {
+            println!("- {} (id: {})", lang.name, lang.id);
+        }
+    }
 }
 
 async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
@@ -350,6 +360,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .default_value("https://godbolt.org"),
         )
         .subcommand(
+            Command::new("list-languages")
+                .arg(Arg::new("all").action(clap::ArgAction::SetTrue).long("all"))
+        )
+        .subcommand(
             Command::new("list-compilers")
                 .arg(Arg::new("all").action(clap::ArgAction::SetTrue).long("all"))
                 .arg(Arg::new("name").long("name"))
@@ -448,6 +462,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
         Some(("compile", sub_matches)) => do_compile(&base_url, sub_matches).await,
         Some(("list-compilers", sub_matches)) => do_list_compilers(&base_url, sub_matches).await,
+        Some(("list-languages", submatches)) => do_list_languages(&base_url, submatches).await,
         _ => println!("Woops"),
     }
 

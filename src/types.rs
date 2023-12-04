@@ -1,9 +1,19 @@
 pub mod implems;
 
-
 use serde::Serialize;
 use serde::Deserialize;
 use std::collections::HashMap;
+
+// #[allow(dead_code)]
+// #[allow(non_snake_case)]
+// #[derive(Deserialize, Debug)]
+// pub struct Language {
+//     pub id: String,
+//     pub name: String,
+//     pub extensions: Vec<String>,
+//     pub monaco: String,
+
+// }
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
@@ -11,8 +21,22 @@ use std::collections::HashMap;
 pub struct Language {
     pub id: String,
     pub name: String,
-    pub extensions: Vec<String>,
     pub monaco: String,
+    // FIXME
+    pub extensions: Vec<String>,
+    pub alias: Option<Vec<String>>,
+    pub formatter: Option<String>,
+    pub supportsExecute: Option<bool>,
+    pub logoUrl: Option<String>,
+    pub logoUrlDark: Option<String>,
+    //pub logoData: Option<FIXME>,
+    //pub logoDataDark: Option<FIXME>,
+    pub example: Option<String>,
+    // Should be Regex?
+    pub previewFilter: Option<String>,
+    pub monacoDisassembly: Option<String>,
+    pub tooltip: Option<String>,
+    pub defaultCompiler: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -25,7 +49,6 @@ pub struct CompilerInfo {
     pub compilerType: String,
     pub semver: String,
     pub instructionSet: String,
-
 
     pub exe: Option<String>,
     pub version: Option<String>,
@@ -132,8 +155,8 @@ pub struct  Session {
     pub executors: Vec<ExecutorConfig>,
 }
 
-#[allow( ead_code)]
-#[allow( on_snake_case)]
+#[allow(dead_code)]
+#[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 pub struct ShortLinkInfo {
     pub sessions: Vec<Session>,
