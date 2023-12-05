@@ -22,7 +22,6 @@ use thiserror::Error;
 mod types;
 use types::*;
 
-
 #[derive(Debug, Error)]
 enum Error {
     #[error("Reqwest error")]
@@ -36,12 +35,21 @@ enum Error {
         #[from]
         source: serde_json::Error,
     },
+
+    #[error("Internal Error")]
+    InternalError,
 }
 
-async fn languages(base_url: &str) -> Result<Vec<Language>, Error> {
+struct Session {
+    base_url: String,
+    // all_compilers: Option<Vec<CompilerInfo>>,
+    // all_compilers_full: bool,
+}
+
+async fn languages(session: &Session) -> Result<Vec<Language>, Error> {
     let client = reqwest::Client::new();
     let resp = client
-        .get(format!("{}/api/languages", base_url))
+        .get(format!("{}/api/languages", session.base_url))
         .header("Accept", "application/json")
         .send()
         .await?;
@@ -50,17 +58,16 @@ async fn languages(base_url: &str) -> Result<Vec<Language>, Error> {
     Ok(resp)
 }
 
-async fn compilers(base_url: &str, all_fields: bool) -> Result<Vec<CompilerInfo>, Error> {
+async fn compilers(session: &Session, all_fields: bool) -> Result<Vec<CompilerInfo>, Error> {
     let client = reqwest::Client::new();
 
-    let params = [
-        ("fields", (if all_fields {"all"} else {"no"})),
-    ];
+    let params = [("fields", (if all_fields { "all" } else { "no" }))];
 
     let url = if all_fields {
-        reqwest::Url::parse_with_params(&format!("{}/api/compilers", base_url), &params).unwrap()
+        reqwest::Url::parse_with_params(&format!("{}/api/compilers", session.base_url), &params)
+            .unwrap()
     } else {
-        reqwest::Url::parse(&format!("{}/api/compilers", base_url)).unwrap()
+        reqwest::Url::parse(&format!("{}/api/compilers", session.base_url)).unwrap()
     };
 
     let resp = client
@@ -73,10 +80,10 @@ async fn compilers(base_url: &str, all_fields: bool) -> Result<Vec<CompilerInfo>
     Ok(resp)
 }
 
-async fn compilers_id(id: u8) -> Result<Vec<CompilerInfo>, Error> {
+async fn compilers_id(session: &Session, id: u8) -> Result<Vec<CompilerInfo>, Error> {
     let client = reqwest::Client::new();
     let resp = client
-        .get(format!("https://godbolt.org/api/compilers/{}", id))
+        .get(format!("{}/api/compilers/{}", session.base_url, id))
         .header("Accept", "application/json")
         .send()
         .await?;
@@ -85,12 +92,12 @@ async fn compilers_id(id: u8) -> Result<Vec<CompilerInfo>, Error> {
     Ok(resp)
 }
 
-async fn shortlinkinfo(shortlink: &str) -> Result<ShortLinkInfo, Error> {
+async fn shortlinkinfo(session: &Session, shortlink: &str) -> Result<ShortLinkInfo, Error> {
     let client = reqwest::Client::new();
     let resp = client
         .get(format!(
-            "https://godbolt.org/api/shortlinkinfo/{}",
-            shortlink
+            "{}/api/shortlinkinfo/{}",
+            session.base_url, shortlink
         ))
         .header("Accept", "application/json")
         .send()
@@ -101,14 +108,17 @@ async fn shortlinkinfo(shortlink: &str) -> Result<ShortLinkInfo, Error> {
 }
 
 async fn compile(
-    base_url: &str,
+    session: &Session,
     compiler_id: &str,
     job: CompileJob,
 ) -> Result<CompileJobResult, Error> {
     let client = reqwest::Client::new();
 
     let resp = client
-        .post(format!("{}/api/compiler/{}/compile", base_url, compiler_id))
+        .post(format!(
+            "{}/api/compiler/{}/compile",
+            session.base_url, compiler_id
+        ))
         .header("Accept", "application/json")
         .json(&job)
         .send()
@@ -118,9 +128,8 @@ async fn compile(
     Ok(resp)
 }
 
-async fn get_compiler_info(base_url: &str,
-                           compiler_id: &str) -> Option<CompilerInfo> {
-    if let Ok(all_compilers) = compilers(base_url, true).await {
+async fn get_compiler_info(session: &Session, compiler_id: &str) -> Option<CompilerInfo> {
+    if let Ok(all_compilers) = compilers(session, true).await {
         let all = all_compilers
             .into_iter()
             .filter(|x| x.id == compiler_id)
@@ -131,13 +140,13 @@ async fn get_compiler_info(base_url: &str,
 }
 
 async fn find_compilers(
-    base_url: &str,
+    session: &Session,
     all_fields: bool,
     name: Option<String>,
     language: Option<String>,
     isa: Option<String>,
 ) -> Option<Vec<CompilerInfo>> {
-    if let Ok(all_compilers) = compilers(base_url, all_fields).await {
+    if let Ok(all_compilers) = compilers(session, all_fields).await {
         let after_name_filtered = match name {
             Some(n) => {
                 let re = Regex::new(format!(r"(?i){}", n).as_str()).unwrap();
@@ -178,8 +187,8 @@ async fn find_compilers(
     None
 }
 
-async fn do_list_languages(base_url: &str, _matches: &ArgMatches) {
-    if let Ok(mut all_languages) = languages(base_url).await {
+async fn do_list_languages(session: &Session, _matches: &ArgMatches) {
+    if let Ok(mut all_languages) = languages(session).await {
         all_languages.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
         for lang in all_languages {
@@ -188,13 +197,13 @@ async fn do_list_languages(base_url: &str, _matches: &ArgMatches) {
     }
 }
 
-async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
+async fn do_list_compilers(session: &Session, matches: &ArgMatches) {
     let name = matches.get_one::<String>("name");
     let lang = matches.get_one::<String>("language");
     let isa = matches.get_one::<String>("isa");
 
     let maybe_compilers =
-        find_compilers(base_url, false, name.cloned(), lang.cloned(), isa.cloned()).await;
+        find_compilers(session, false, name.cloned(), lang.cloned(), isa.cloned()).await;
     if let Some(compilers) = maybe_compilers {
         for c in compilers {
             println!("- {}", c.to_text());
@@ -204,7 +213,7 @@ async fn do_list_compilers(base_url: &str, matches: &ArgMatches) {
     }
 }
 
-async fn do_compile(base_url: &str, matches: &ArgMatches) {
+async fn do_compile(session: &Session, matches: &ArgMatches) {
     let is_summary = matches.get_one::<bool>("summary").unwrap();
 
     let mut filters_config = Filters::new()
@@ -213,7 +222,7 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
         .execute(*matches.get_one("execute").unwrap());
 
     let mut stdout_f = match matches.get_one::<String>("stdout") {
-        Some(ref s) if *s == "-" => Some(Box::new(std::io::stdout()) as Box<dyn std::io::Write>),
+        Some(s) if s == "-" => Some(Box::new(std::io::stdout()) as Box<dyn std::io::Write>),
         Some(filename) => std::fs::File::create(filename)
             .map(|f| Some(Box::new(f) as Box<dyn std::io::Write>))
             .unwrap(),
@@ -221,7 +230,7 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
     };
 
     let mut stderr_f = match matches.get_one::<String>("stderr") {
-        Some(ref s) if *s == "-" => Some(Box::new(std::io::stderr()) as Box<dyn std::io::Write>),
+        Some(s) if s == "-" => Some(Box::new(std::io::stderr()) as Box<dyn std::io::Write>),
         Some(filename) => std::fs::File::create(filename)
             .map(|f| Some(Box::new(f) as Box<dyn std::io::Write>))
             .unwrap(),
@@ -265,13 +274,13 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
     };
 
     let compilers_id = if let Some(id) = matches.get_one::<String>("compiler-id") {
-        vec![get_compiler_info(base_url, &id).await.unwrap()]
+        vec![get_compiler_info(session, id).await.unwrap()]
     } else {
         let name = matches.get_one::<String>("compiler-name");
         let lang = matches.get_one::<String>("compiler-lang");
         let isa = matches.get_one::<String>("compiler-isa");
 
-        find_compilers(base_url, true, name.cloned(), lang.cloned(), isa.cloned())
+        find_compilers(session, true, name.cloned(), lang.cloned(), isa.cloned())
             .await
             .unwrap()
             .into_iter()
@@ -282,12 +291,12 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
         // println!("{:?}", compiler_info);
         let compiler_id = compiler_info.id;
         let mut local_filters = filters_config.clone();
-        if ! compiler_info.supportsExecute.unwrap() {
+        if !compiler_info.supportsExecute.unwrap() {
             local_filters = local_filters.execute(false)
         }
         let simple_job = CompileJob::build(&source_data, &flags, &local_filters);
 
-        let compile_ret1 = compile(base_url, &compiler_id, simple_job.clone()).await;
+        let compile_ret1 = compile(session, &compiler_id, simple_job.clone()).await;
 
         let ret1 = compile_ret1.unwrap();
 
@@ -317,7 +326,9 @@ async fn do_compile(base_url: &str, matches: &ArgMatches) {
             if !is_summary {
                 println!("Execution not supported\n");
             } else {
-                println!("{} Execution not supported for \"{}\".", "✗".red(),
+                println!(
+                    "{} Execution not supported for \"{}\".",
+                    "✗".red(),
                     compiler_info.name,
                 );
             }
@@ -359,10 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .long("base-url")
                 .default_value("https://godbolt.org"),
         )
-        .subcommand(
-            Command::new("list-languages")
-                .arg(Arg::new("all").action(clap::ArgAction::SetTrue).long("all"))
-        )
+        .subcommand(Command::new("list-languages"))
         .subcommand(
             Command::new("list-compilers")
                 .arg(Arg::new("all").action(clap::ArgAction::SetTrue).long("all"))
@@ -450,19 +458,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .get_matches();
 
-    // let stderr_config = match matches.get_one::<String>("stderr") {
-    //     Some("-".to_string(value)) => OutputConfig::Disable,
-    //     Some(filename) => OutputConfig::Disable,
-    //     _ => OutputConfig::Disable,
-    // };
-
     let base_url = matches
         .get_one::<String>("base-url")
         .expect("can't be missing");
+
+    let session = Session {
+        base_url: base_url.clone(),
+        // all_compilers: None,
+        // all_compilers_full: false,
+    };
+
     match matches.subcommand() {
-        Some(("compile", sub_matches)) => do_compile(&base_url, sub_matches).await,
-        Some(("list-compilers", sub_matches)) => do_list_compilers(&base_url, sub_matches).await,
-        Some(("list-languages", submatches)) => do_list_languages(&base_url, submatches).await,
+        Some(("compile", sub_matches)) => do_compile(&session, sub_matches).await,
+        Some(("list-compilers", sub_matches)) => do_list_compilers(&session, sub_matches).await,
+        Some(("list-languages", submatches)) => do_list_languages(&session, submatches).await,
         _ => println!("Woops"),
     }
 

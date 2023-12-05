@@ -99,7 +99,6 @@ impl Filters {
     }
 }
 
-
 impl CompileJob {
     pub fn build(source: &str, compiler_option: &str, filters: &Filters) -> Self {
         CompileJob {
@@ -149,7 +148,6 @@ impl CompileJob {
         }
     }
 }
-
 
 impl SomeOutput {
     pub fn to_text(&self) -> String {

@@ -1,7 +1,7 @@
 pub mod implems;
 
-use serde::Serialize;
 use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 
 // #[allow(dead_code)]
@@ -142,11 +142,10 @@ pub struct CompilerInfo {
     //mtime: Option<FIXME>,
 }
 
-
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  Session {
+pub struct Session {
     pub id: u8,
     pub language: String,
     pub source: String,
@@ -166,17 +165,17 @@ pub struct ShortLinkInfo {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  Tree {}
+pub struct Tree {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  ExecutorConfig {}
+pub struct ExecutorConfig {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  CompilerConfig {
+pub struct CompilerConfig {
     pub _internalid: u8,
     pub id: String,
     pub options: String,
@@ -188,23 +187,23 @@ pub struct  CompilerConfig {
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
-#[derive (Deserialize, Debug)]
-pub struct  Output {}
+#[derive(Deserialize, Debug)]
+pub struct Output {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct  Library {}
+pub struct Library {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct  Tool {}
+pub struct Tool {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct  Filters {
+pub struct Filters {
     pub binary: bool,
     pub binaryObject: bool,
     pub commentOnly: bool,
@@ -220,7 +219,7 @@ pub struct  Filters {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Serialize, Debug, Clone)]
-pub struct  CompileJob {
+pub struct CompileJob {
     pub source: String,
     pub options: CompileOptions,
     pub lang: Option<String>,
@@ -229,7 +228,7 @@ pub struct  CompileJob {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Serialize, Debug, Clone)]
-pub struct  CompileOptions {
+pub struct CompileOptions {
     pub userArguments: String,
     pub compilerOptions: OtherCompilerOptions,
     pub filters: Filters,
@@ -240,7 +239,7 @@ pub struct  CompileOptions {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct  OtherCompilerOptions {
+pub struct OtherCompilerOptions {
     pub skipAsm: bool,
     pub executorRequest: bool,
 }
@@ -248,22 +247,22 @@ pub struct  OtherCompilerOptions {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  Download {}
+pub struct Download {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  ToolResult {}
+pub struct ToolResult {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  Label {}
+pub struct Label {}
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  Tag {
+pub struct Tag {
     pub line: i32,
     pub column: i32,
     pub text: String,
@@ -274,12 +273,12 @@ pub struct  Tag {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  SomeOutput(Vec<OutputItem>);
+pub struct SomeOutput(Vec<OutputItem>);
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  OutputItem {
+pub struct OutputItem {
     pub text: String,
     pub tag: Option<Tag>,
 }
@@ -287,7 +286,7 @@ pub struct  OutputItem {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  SourceLocation {
+pub struct SourceLocation {
     pub file: Option<String>,
     pub line: i32,
 }
@@ -295,12 +294,12 @@ pub struct  SourceLocation {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  AsmOutput(Vec<AsmOutputItem>);
+pub struct AsmOutput(Vec<AsmOutputItem>);
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  AsmOutputItem {
+pub struct AsmOutputItem {
     pub text: String,
     pub source: Option<SourceLocation>,
     pub labels: Vec<Label>,
@@ -309,7 +308,7 @@ pub struct  AsmOutputItem {
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-pub struct  PopularArgument {
+pub struct PopularArgument {
     pub description: String,
     pub timesused: i32,
 }
@@ -317,7 +316,7 @@ pub struct  PopularArgument {
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
-pub struct  CompileJobResult {
+pub struct CompileJobResult {
     pub inputFilename: String,
     pub code: i32,
     pub okToCache: bool,
@@ -341,7 +340,7 @@ pub struct  CompileJobResult {
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
-pub struct  ExecutionResult {
+pub struct ExecutionResult {
     pub code: i32,
     pub okToCache: Option<bool>,
     pub timedOut: bool,
@@ -357,7 +356,7 @@ pub struct  ExecutionResult {
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
-pub struct  ExecBuildResult {
+pub struct ExecBuildResult {
     pub inputFilename: String,
     pub code: i32,
     pub okToCache: bool,
