@@ -21,6 +21,7 @@ use regex::Regex;
 use thiserror::Error;
 mod types;
 use types::*;
+use version_compare::{compare, compare_to, Cmp, Version};
 
 #[derive(Debug, Error)]
 enum Error {
@@ -145,6 +146,8 @@ async fn find_compilers(
     name: Option<String>,
     language: Option<String>,
     isa: Option<String>,
+    version_min: Option<String>,
+    version_max: Option<String>,
 ) -> Option<Vec<CompilerInfo>> {
     if let Ok(all_compilers) = compilers(session, all_fields).await {
         let after_name_filtered = match name {
@@ -182,7 +185,22 @@ async fn find_compilers(
             _ => after_lang_filtered,
         };
 
-        return Some(after_isa_filtered);
+        let after_version_min_filtered = match version_min {
+            Some(vmin) => {
+                let vmin = Version::from(&vmin).unwrap();
+                after_isa_filtered
+                    .into_iter()
+                    .filter(|x| {
+                        let vcur = Version::from(&x.semver);
+                        vcur.is_some_and(|cur| {
+                            cur >= vmin
+                        })})
+                    .collect::<Vec<CompilerInfo>>()
+            }
+            _ => after_isa_filtered,
+        };
+
+        return Some(after_version_min_filtered);
     }
     None
 }
@@ -201,9 +219,10 @@ async fn do_list_compilers(session: &Session, matches: &ArgMatches) {
     let name = matches.get_one::<String>("name");
     let lang = matches.get_one::<String>("language");
     let isa = matches.get_one::<String>("isa");
+    let version_min = matches.get_one::<String>("version-min");
 
     let maybe_compilers =
-        find_compilers(session, false, name.cloned(), lang.cloned(), isa.cloned()).await;
+        find_compilers(session, false, name.cloned(), lang.cloned(), isa.cloned(), version_min.cloned(), None).await;
     if let Some(compilers) = maybe_compilers {
         for c in compilers {
             println!("- {}", c.to_text());
@@ -280,7 +299,7 @@ async fn do_compile(session: &Session, matches: &ArgMatches) {
         let lang = matches.get_one::<String>("compiler-lang");
         let isa = matches.get_one::<String>("compiler-isa");
 
-        find_compilers(session, true, name.cloned(), lang.cloned(), isa.cloned())
+        find_compilers(session, true, name.cloned(), lang.cloned(), isa.cloned(), None, None)
             .await
             .unwrap()
             .into_iter()
@@ -376,7 +395,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(Arg::new("all").action(clap::ArgAction::SetTrue).long("all"))
                 .arg(Arg::new("name").long("name"))
                 .arg(Arg::new("isa").long("instruction-set"))
-                .arg(Arg::new("language").long("language")),
+                .arg(Arg::new("language").long("language"))
+                .arg(Arg::new("version-min").long("version-min")),
         )
         .subcommand(
             Command::new("compile")
