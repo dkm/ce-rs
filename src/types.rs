@@ -267,7 +267,7 @@ pub struct Tag {
     pub column: i32,
     pub text: String,
     pub severity: i32,
-    pub file: String,
+    pub file: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -325,7 +325,7 @@ pub struct CompileJobResult {
     pub stderr: SomeOutput,
     pub truncated: bool,
     pub execTime: String, // why not integer?
-    pub processExecutionResultTime: f32,
+    pub processExecutionResultTime: Option<f32>,
     pub compilationOptions: Vec<String>,
     pub downloads: Vec<Download>,
     pub tools: Vec<ToolResult>,
@@ -365,7 +365,7 @@ pub struct ExecBuildResult {
     pub stderr: SomeOutput,
     pub truncated: bool,
     pub execTime: String,
-    pub processExecutionResultTime: f32,
+    pub processExecutionResultTime: Option<f32>,
     pub downloads: Vec<Download>,
     pub executableFilename: String,
     pub compilationOptions: Vec<String>,

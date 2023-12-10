@@ -43,13 +43,13 @@ enum Error {
 
 struct Session {
     base_url: String,
+    client: reqwest::Client,
     // all_compilers: Option<Vec<CompilerInfo>>,
     // all_compilers_full: bool,
 }
 
 async fn languages(session: &Session) -> Result<Vec<Language>, Error> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = session.client
         .get(format!("{}/api/languages", session.base_url))
         .header("Accept", "application/json")
         .send()
@@ -82,8 +82,7 @@ async fn compilers(session: &Session, all_fields: bool) -> Result<Vec<CompilerIn
 }
 
 async fn compilers_id(session: &Session, id: u8) -> Result<Vec<CompilerInfo>, Error> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = session.client
         .get(format!("{}/api/compilers/{}", session.base_url, id))
         .header("Accept", "application/json")
         .send()
@@ -94,8 +93,7 @@ async fn compilers_id(session: &Session, id: u8) -> Result<Vec<CompilerInfo>, Er
 }
 
 async fn shortlinkinfo(session: &Session, shortlink: &str) -> Result<ShortLinkInfo, Error> {
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = session.client
         .get(format!(
             "{}/api/shortlinkinfo/{}",
             session.base_url, shortlink
@@ -113,9 +111,8 @@ async fn compile(
     compiler_id: &str,
     job: CompileJob,
 ) -> Result<CompileJobResult, Error> {
-    let client = reqwest::Client::new();
 
-    let resp = client
+    let resp = session.client
         .post(format!(
             "{}/api/compiler/{}/compile",
             session.base_url, compiler_id
@@ -192,15 +189,28 @@ async fn find_compilers(
                     .into_iter()
                     .filter(|x| {
                         let vcur = Version::from(&x.semver);
-                        vcur.is_some_and(|cur| {
-                            cur >= vmin
-                        })})
+                        vcur.is_some_and(|cur| cur >= vmin)
+                    })
                     .collect::<Vec<CompilerInfo>>()
             }
             _ => after_isa_filtered,
         };
 
-        return Some(after_version_min_filtered);
+        let after_version_max_filtered = match version_max {
+            Some(vmax) => {
+                let vmax = Version::from(&vmax).unwrap();
+                after_version_min_filtered
+                    .into_iter()
+                    .filter(|x| {
+                        let vcur = Version::from(&x.semver);
+                        vcur.is_some_and(|cur| cur <= vmax)
+                    })
+                    .collect::<Vec<CompilerInfo>>()
+            }
+            _ => after_version_min_filtered,
+        };
+
+        return Some(after_version_max_filtered);
     }
     None
 }
@@ -220,9 +230,18 @@ async fn do_list_compilers(session: &Session, matches: &ArgMatches) {
     let lang = matches.get_one::<String>("language");
     let isa = matches.get_one::<String>("isa");
     let version_min = matches.get_one::<String>("version-min");
+    let version_max = matches.get_one::<String>("version-max");
 
-    let maybe_compilers =
-        find_compilers(session, false, name.cloned(), lang.cloned(), isa.cloned(), version_min.cloned(), None).await;
+    let maybe_compilers = find_compilers(
+        session,
+        false,
+        name.cloned(),
+        lang.cloned(),
+        isa.cloned(),
+        version_min.cloned(),
+        version_max.cloned(),
+    )
+    .await;
     if let Some(compilers) = maybe_compilers {
         for c in compilers {
             println!("- {}", c.to_text());
@@ -298,12 +317,22 @@ async fn do_compile(session: &Session, matches: &ArgMatches) {
         let name = matches.get_one::<String>("compiler-name");
         let lang = matches.get_one::<String>("compiler-lang");
         let isa = matches.get_one::<String>("compiler-isa");
+        let version_min = matches.get_one::<String>("version-min");
+        let version_max = matches.get_one::<String>("version-max");
 
-        find_compilers(session, true, name.cloned(), lang.cloned(), isa.cloned(), None, None)
-            .await
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<CompilerInfo>>()
+        find_compilers(
+            session,
+            true,
+            name.cloned(),
+            lang.cloned(),
+            isa.cloned(),
+            version_min.cloned(),
+            version_max.cloned(),
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .collect::<Vec<CompilerInfo>>()
     };
 
     for compiler_info in compilers_id {
@@ -396,7 +425,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arg(Arg::new("name").long("name"))
                 .arg(Arg::new("isa").long("instruction-set"))
                 .arg(Arg::new("language").long("language"))
-                .arg(Arg::new("version-min").long("version-min")),
+                .arg(Arg::new("version-min").long("version-min"))
+                .arg(Arg::new("version-max").long("version-max")),
         )
         .subcommand(
             Command::new("compile")
@@ -458,6 +488,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .long("instruction-set")
                         .conflicts_with("compiler-id"),
                 )
+                .arg(
+                    Arg::new("version-min")
+                        .long("version-min")
+                        .conflicts_with("compiler-id"),
+                )
+                .arg(
+                    Arg::new("version-max")
+                        .long("version-max")
+                        .conflicts_with("compiler-id"),
+                )
                 .arg(Arg::new("flags").allow_hyphen_values(true).long("flags"))
                 .arg(
                     Arg::new("stdout")
@@ -484,6 +524,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let session = Session {
         base_url: base_url.clone(),
+        client: reqwest::Client::builder().user_agent(concat!(
+            env!("CARGO_PKG_NAME"),
+            "/",
+            env!("CARGO_PKG_VERSION")
+        )).build()?,
         // all_compilers: None,
         // all_compilers_full: false,
     };
